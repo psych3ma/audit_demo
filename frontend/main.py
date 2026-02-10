@@ -15,7 +15,13 @@ import requests
 import streamlit as st
 
 from common.config import BACKEND_URL
-from backend.services.engine import get_dynamic_law_url
+from backend.services.engine import (
+    get_dynamic_law_url,
+    stage1_nlp_to_graph,
+    stage2_inject_law_context,
+    stage3_expert_analysis,
+    build_graph_image_url,
+)
 
 
 def render_law_badges(relevant_laws: List[str]) -> str:
@@ -99,45 +105,95 @@ def main() -> None:
         # 엔진 분석 진행률(대략적인 진행 상황) 표시용 프로그레스 바
         progress_bar = st.progress(0, text="엔진 분석 준비 중 (0/3 단계)")
 
-        def call_backend():
-            return requests.post(
-                f"{BACKEND_URL}/analyze",
-                json={"scenario": scenario},
-                timeout=120,
-            )
-
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(call_backend)
-                step = 0
-                while not future.done():
-                    step = min(step + 5, 95)
-                    if step < 35:
-                        label = "엔진 분석 중 (1/3) 시나리오 구조화..."
-                    elif step < 70:
-                        label = "엔진 분석 중 (2/3) 법령 컨텍스트 적용..."
-                    else:
-                        label = "엔진 분석 중 (3/3) 전문가 의견 생성..."
-                    progress_bar.progress(step, text=label)
-                    time.sleep(0.2)
+            # 백엔드 API가 사용 가능한지 확인
+            try:
+                health_check = requests.get(f"{BACKEND_URL}/health", timeout=2)
+                use_backend = health_check.status_code == 200
+            except:
+                use_backend = False
 
-                resp = future.result()
+            if use_backend:
+                # 백엔드 API 사용
+                def call_backend():
+                    return requests.post(
+                        f"{BACKEND_URL}/analyze",
+                        json={"scenario": scenario},
+                        timeout=120,
+                    )
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(call_backend)
+                    step = 0
+                    while not future.done():
+                        step = min(step + 5, 95)
+                        if step < 35:
+                            label = "엔진 분석 중 (1/3) 시나리오 구조화..."
+                        elif step < 70:
+                            label = "엔진 분석 중 (2/3) 법령 컨텍스트 적용..."
+                        else:
+                            label = "엔진 분석 중 (3/3) 전문가 의견 생성..."
+                        progress_bar.progress(step, text=label)
+                        time.sleep(0.2)
+
+                    resp = future.result()
+
+                if resp.status_code != 200:
+                    progress_bar.empty()
+                    st.error(
+                        f"분석 API 호출 실패 (status={resp.status_code})\n\n{resp.text}"
+                    )
+                    return
+
+                data = resp.json()
+            else:
+                # 백엔드 없이 직접 엔진 함수 호출 (Streamlit Cloud용)
+                progress_bar.progress(10, text="엔진 분석 중 (1/3) 시나리오 구조화...")
+                graph_data = stage1_nlp_to_graph(scenario)
+
+                progress_bar.progress(40, text="엔진 분석 중 (2/3) 법령 컨텍스트 적용...")
+                law_context = stage2_inject_law_context(graph_data)
+
+                progress_bar.progress(70, text="엔진 분석 중 (3/3) 전문가 의견 생성...")
+                raw_analysis = stage3_expert_analysis(scenario, graph_data, law_context)
+
+                # status 정규화
+                valid_statuses = ["수임 불가", "안전장치 적용 시 수임 가능", "수임 가능"]
+                status = str(raw_analysis.get("status", "")).strip()
+                if status not in valid_statuses:
+                    if "수임 불가" in status:
+                        status = "수임 불가"
+                    elif "안전장치" in status:
+                        status = "안전장치 적용 시 수임 가능"
+                    elif "수임 가능" in status:
+                        status = "수임 가능"
+                    else:
+                        status = "검토 중"
+
+                analysis_result = {**raw_analysis, "status": status}
+                graph_url = build_graph_image_url(graph_data, analysis_result)
+
+                data = {
+                    "status": status,
+                    "reason_html": analysis_result.get("reason", ""),
+                    "safeguards": analysis_result.get("safeguards", []),
+                    "relevant_laws": analysis_result.get("relevant_laws", []),
+                    "graph": graph_data,
+                    "law_context": law_context,
+                    "risky_node_ids": analysis_result.get("risky_node_ids", []),
+                    "risky_edge_indices": analysis_result.get("risky_edge_indices", []),
+                    "graph_image_url": graph_url,
+                }
 
         except Exception as e:
             progress_bar.empty()
-            st.error(f"백엔드 호출 중 오류가 발생했습니다: {e}")
-            return
-
-        if resp.status_code != 200:
-            progress_bar.empty()
-            st.error(
-                f"분석 API 호출 실패 (status={resp.status_code})\n\n{resp.text}"
-            )
+            st.error(f"분석 중 오류가 발생했습니다: {e}")
+            import traceback
+            st.code(traceback.format_exc())
             return
 
         # 성공적으로 응답을 받은 경우, 100%로 마무리하고 결과를 세션에 저장
         progress_bar.progress(100, text="엔진 분석 완료 (3/3 단계)")
-        data = resp.json()
 
         # status 문자열이 설명 문구 등을 포함하는 경우를 방지하기 위한 추가 정규화
         valid_statuses = ["수임 불가", "안전장치 적용 시 수임 가능", "수임 가능"]
