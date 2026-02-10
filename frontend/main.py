@@ -143,15 +143,17 @@ def main() -> None:
                     try:
                         resp = future.result()
                         if resp.status_code != 200:
-                            raise Exception(f"API 호출 실패 (status={resp.status_code})")
-                        data = resp.json()
+                            # 백엔드 응답이 비정상이면 직접 실행 모드로 전환
+                            use_backend = False
+                        else:
+                            data = resp.json()
                     except (requests.exceptions.ConnectionError, 
                             requests.exceptions.Timeout,
                             requests.exceptions.RequestException) as e:
                         # 백엔드 호출 실패 시 직접 엔진 함수 호출로 전환
                         use_backend = False
-                        raise Exception("백엔드 연결 실패, 직접 실행 모드로 전환")
-            else:
+
+            if not use_backend:
                 # 백엔드 없이 직접 엔진 함수 호출 (Streamlit Cloud용)
                 progress_bar.progress(10, text="엔진 분석 중 (1/3) 시나리오 구조화...")
                 graph_data = stage1_nlp_to_graph(scenario)
