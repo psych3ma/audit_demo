@@ -106,7 +106,7 @@ pip install -r requirements.txt
 루트 디렉토리에 `.env` 파일을 만들고:
 
 ```bash
-OPENAI_API_KEY=sk-...당신의키...
+OPENAI_API_KEY="sk-..."
 ```
 
 필요 시:
@@ -148,24 +148,8 @@ streamlit run frontend/main.py --server.address 127.0.0.1 --server.port 8501
 
 ---
 
-### 6. 튜닝 포인트
+### 6. 보안 및 운영 관점 메모
 
-- **시나리오 작성 가이드**: `frontend/main.py` 내 expander 문구
-- **기본 예시 시나리오**: `frontend/main.py` 의 `default_scenario` 문자열
-- **법령 컨텍스트 규칙**: `backend/services/engine.py` 의 `stage2_inject_law_context()`  
-  - 키워드(예: `"지분"`, `"차입"`)와 설명 문구를 추가/수정
-- **판정 기준 튜닝**: `backend/services/engine.py` 의 `stage3_expert_analysis()`  
-  - `status` 세 가지 상태에 대한 설명을 바꾸어 보수/완화 정도 조정 가능
-
----
-
-### 7. 보안 및 운영 관점 메모
-
-- **API 키 하드코딩 금지**: 코드 어디에도 키를 직접 넣지 않고, `.env` / 환경변수만 사용
 - **레이어 분리**:
   - 엔진(`backend/services/engine.py`)은 FastAPI/Streamlit과 분리되어 있어,  
     추후 모바일/사내 포털 등 다른 UI에서 재사용 가능
-- **로깅/모니터링 (향후)**:
-  - 운영 배포 시 FastAPI 레벨에서 호출 로그(입력 길이, 응답시간, status 분포 등) 수집 권장
-  - 민감한 시나리오 텍스트는 반드시 마스킹·익명화 후 로그에 남기도록 추가 설계 필요
-
