@@ -107,10 +107,14 @@ def main() -> None:
 
         try:
             # 백엔드 API가 사용 가능한지 확인
+            use_backend = False
             try:
                 health_check = requests.get(f"{BACKEND_URL}/health", timeout=2)
-                use_backend = health_check.status_code == 200
-            except:
+                if health_check.status_code == 200:
+                    use_backend = True
+            except (requests.exceptions.ConnectionError, 
+                    requests.exceptions.Timeout, 
+                    requests.exceptions.RequestException):
                 use_backend = False
 
             if use_backend:
@@ -136,16 +140,17 @@ def main() -> None:
                         progress_bar.progress(step, text=label)
                         time.sleep(0.2)
 
-                    resp = future.result()
-
-                if resp.status_code != 200:
-                    progress_bar.empty()
-                    st.error(
-                        f"분석 API 호출 실패 (status={resp.status_code})\n\n{resp.text}"
-                    )
-                    return
-
-                data = resp.json()
+                    try:
+                        resp = future.result()
+                        if resp.status_code != 200:
+                            raise Exception(f"API 호출 실패 (status={resp.status_code})")
+                        data = resp.json()
+                    except (requests.exceptions.ConnectionError, 
+                            requests.exceptions.Timeout,
+                            requests.exceptions.RequestException) as e:
+                        # 백엔드 호출 실패 시 직접 엔진 함수 호출로 전환
+                        use_backend = False
+                        raise Exception("백엔드 연결 실패, 직접 실행 모드로 전환")
             else:
                 # 백엔드 없이 직접 엔진 함수 호출 (Streamlit Cloud용)
                 progress_bar.progress(10, text="엔진 분석 중 (1/3) 시나리오 구조화...")
