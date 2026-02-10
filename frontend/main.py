@@ -65,7 +65,7 @@ def main() -> None:
     )
 
     st.title("AI 기반 감사 독립성 스캐너")
-    st.caption("대형 회계법인 품질관리실 수준의 독립성 리스크 자동 판정 엔진")
+    st.caption("*본 리포트는 전문가의 최종 판단을 돕기 위한 보조 자료입니다.")
 
     col1, col2 = st.columns([1.1, 1])
 
